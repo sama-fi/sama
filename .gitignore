@@ -1,0 +1,36 @@
+# dependencies
+node_modules
+
+# build output
+.next
+.open-next
+.wrangler
+*.tsbuildinfo
+test-results/
+playwright-report/
+
+# env
+.env
+.env.local
+.env*.local
+
+# editor / OS / local tooling
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# not used by the frontend build
+sama-brand/
+scripts/
+tests/
+playwright.config.ts
+/sama-logo.svg
+public/onboarding/
+public/footer-bg copy.png
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

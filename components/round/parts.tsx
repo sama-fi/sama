@@ -1,0 +1,141 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { AssetIcon } from "@/components/asset-icon";
+import { IconCheck, IconExternal, IconGas, IconPen, IconSpinner, IconWallet } from "@/components/icons";
+import type { ProgressWords } from "@/lib/api/contract";
+import { txUrl } from "@/lib/chain";
+import { clock, short, tokens, usd } from "@/lib/format";
+import type { Dict } from "@/lib/i18n/dict";
+import { fmt } from "@/lib/i18n/dict";
+import { useI18n } from "@/lib/i18n/provider";
+import { cx } from "@/utils/cx";
+
+export function useNow() {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  return now;
+}
+
+/** Time left as "m:ss"; announced politely once a minute, not every second. */
+export function Countdown({ until }: { until: number }) {
+  const now = useNow();
+  const left = until - now;
+  return <span aria-live={left % 60 === 0 ? "polite" : "off"}>{clock(left)}</span>;
+}
+
+/** A pseudonymous member label from the API, or a bare number from mock data, rendered in the user's language. */
+export function who(counterparty: string, d: Dict) {
+  const n = counterparty.match(/\d+/)?.[0];
+  return n ? fmt(d.common.member, { n }) : counterparty;
+}
+
+/**
+ * One token row, laid out like a wallet's token list: logo, symbol with what happens to it (arrow + words, so colour is
+ * never the only cue), and the amount with its USD value on the right.
+ */
+export function AmountRow({ direction, amount, symbol, usdValue, label }: { direction: "SEND" | "RECEIVE" | "SELL" | "BUY"; amount: number; symbol: string; usdValue: number; label: string }) {
+  const { locale } = useI18n();
+  const out = direction === "SEND" || direction === "SELL";
+  return (
+    <li className="flex items-center gap-3 py-3.5">
+      <AssetIcon symbol={symbol} size={40} />
+      <span className="min-w-0 flex-1">
+        <span className="block font-semibold text-ink">{symbol}</span>
+        <span className={cx("block truncate text-sm", out ? "text-danger" : "text-ok")}>
+          <span aria-hidden="true">{out ? "↑ " : "↓ "}</span>
+          {label}
+        </span>
+      </span>
+      <span className="shrink-0 text-right">
+        <span className="num block font-semibold text-ink">{out ? "−" : "+"}{tokens(amount, locale)} {symbol}</span>
+        <span className="num block text-sm text-ink-3">{usd(usdValue, locale)}</span>
+      </span>
+    </li>
+  );
+}
+
+export type Prompt = { kind: "sign" | "tx"; label: string };
+
+/**
+ * Before any wallet action: list every prompt the wallet will show, whether it is a free signature or a transaction,
+ * and who pays the gas (PRD §19.4.6).
+ */
+export function WalletPromptPreview({ prompts, sponsored }: { prompts: Prompt[]; sponsored: boolean }) {
+  const { d, fmt: f } = useI18n();
+  if (prompts.length === 0) return null;
+  const cost = (p: Prompt) => (
+    <span className={cx("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", p.kind === "sign" || sponsored ? "bg-ok-soft text-ok" : "bg-warn-soft text-warn")}>
+      {p.kind === "sign" ? <><IconPen size={12} />{d.common.free}</> : sponsored ? <><IconGas size={12} />{d.common.sponsored}</> : <><IconGas size={12} />{d.common.needsGas}</>}
+    </span>
+  );
+  // One prompt fits on a single line under the button; several get a numbered list.
+  if (prompts.length === 1) {
+    const [p] = prompts as [Prompt];
+    return (
+      <p className="flex flex-wrap items-center gap-2 text-sm text-ink-2">
+        <IconWallet size={16} className="text-ink-3" />
+        {f(d.round.walletPromptOne, { label: p.label })}
+        {cost(p)}
+      </p>
+    );
+  }
+  return (
+    <div className="rounded-2xl bg-surface-2 p-4">
+      <p className="mb-3 flex items-center gap-2 text-sm font-medium"><IconWallet size={16} className="text-ink-3" />{f(d.round.walletPrompts, { n: prompts.length })}</p>
+      <ol className="grid gap-2.5">
+        {prompts.map((p, i) => (
+          <li key={i} className="flex items-center justify-between gap-3 text-sm">
+            <span className="flex items-center gap-2 text-ink-2">
+              <span className="num grid size-6 shrink-0 place-items-center rounded-full bg-surface text-xs text-ink">{i + 1}</span>
+              {p.label}
+            </span>
+            {cost(p)}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/** Live progress line shown while a multi-step action runs. */
+export function ActionStatus({ status }: { status: string | null }) {
+  if (!status) return null;
+  return (
+    <p role="status" className="flex items-center gap-2 rounded-xl bg-accent-soft px-3 py-2 text-sm">
+      <IconSpinner size={16} />
+      {status}
+    </p>
+  );
+}
+
+export function TxLink({ hash }: { hash: string }) {
+  const { d } = useI18n();
+  return (
+    <a href={txUrl(hash)} target="_blank" rel="noreferrer" className="num inline-flex items-center gap-1 text-sm text-accent hover:underline" title={d.common.viewOnExplorer}>
+      {short(hash, 10, 6)} <IconExternal size={14} />
+    </a>
+  );
+}
+
+export function RailStep({ done, active, failed, title, detail }: { done: boolean; active: boolean; failed?: boolean; title: React.ReactNode; detail?: React.ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span className={cx("mt-0.5 grid size-7 shrink-0 place-items-center rounded-full", failed ? "bg-danger-soft text-danger" : done ? "bg-ok text-white" : active ? "bg-accent-soft text-accent" : "bg-surface-2 text-ink-3")}>
+        {done ? <IconCheck size={16} /> : active ? <IconSpinner size={14} /> : <span className="size-1.5 rounded-full bg-current" />}
+      </span>
+      <div>
+        <p className="text-sm font-medium">{title}</p>
+        {detail && <div className="text-sm text-ink-3">{detail}</div>}
+      </div>
+    </li>
+  );
+}
+
+export function progressWords(d: Dict): ProgressWords {
+  const p = d.round.progress;
+  return { sign: p.sign, submit: p.submit, approvePlan: p.approvePlan, allow: (amount, symbol) => fmt(p.allow, { amount: tokens(amount), symbol }), settle: p.settle, verifying: p.verifying, quote: p.quote, swap: p.swap };
+}
